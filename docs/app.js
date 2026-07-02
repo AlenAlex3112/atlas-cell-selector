@@ -1188,68 +1188,102 @@ function loadDistrictKML(districtName) {
 // Setup Event Listeners
 function setupEventListeners() {
     // District Dropdown Change Selector
-    document.getElementById('district-select').addEventListener('change', function(e) {
-        if (e.target.value) {
-            loadDistrictKML(e.target.value);
-        }
-    });
+    const districtSelect = document.getElementById('district-select');
+    if (districtSelect) {
+        districtSelect.addEventListener('change', function(e) {
+            if (e.target.value) {
+                loadDistrictKML(e.target.value);
+            }
+        });
+    }
 
     // KML File Input Select
-    document.getElementById('kml-file-input').addEventListener('change', function(e) {
-        if (e.target.files.length > 0) {
-            // Reset district dropdown when manual file is selected
-            const selectEl = document.getElementById('district-select');
-            if (selectEl) selectEl.value = "";
-            loadKMLFile(e.target.files[0]);
-        }
-    });
+    const fileInput = document.getElementById('kml-file-input');
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                // Reset district dropdown when manual file is selected
+                const selectEl = document.getElementById('district-select');
+                if (selectEl) selectEl.value = "";
+                loadKMLFile(e.target.files[0]);
+            }
+        });
+    }
     
     // Drag & Drop Handlers
     const uploadZone = document.getElementById('kml-upload-zone');
-    
-    uploadZone.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        uploadZone.classList.add('dragover');
-    });
-    
-    uploadZone.addEventListener('dragleave', function() {
-        uploadZone.classList.remove('dragover');
-    });
-    
-    uploadZone.addEventListener('drop', function(e) {
-        e.preventDefault();
-        uploadZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length > 0) {
-            // Reset district dropdown when manual file is selected
-            const selectEl = document.getElementById('district-select');
-            if (selectEl) selectEl.value = "";
-            loadKMLFile(e.dataTransfer.files[0]);
-        }
-    });
-    
-    // Click upload zone trigger
-    uploadZone.addEventListener('click', function(e) {
-        // Prevent click trigger loop if they click on browse label button
-        if (e.target.tagName !== 'LABEL' && e.target.tagName !== 'INPUT') {
-            document.getElementById('kml-file-input').click();
-        }
-    });
+    if (uploadZone) {
+        uploadZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        
+        uploadZone.addEventListener('dragleave', function() {
+            uploadZone.classList.remove('dragover');
+        });
+        
+        uploadZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                // Reset district dropdown when manual file is selected
+                const selectEl = document.getElementById('district-select');
+                if (selectEl) selectEl.value = "";
+                loadKMLFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        // Click upload zone trigger
+        uploadZone.addEventListener('click', function(e) {
+            // Prevent click trigger loop if they click on browse label button
+            if (e.target.tagName !== 'LABEL' && e.target.tagName !== 'INPUT') {
+                const fileInputEl = document.getElementById('kml-file-input');
+                if (fileInputEl) fileInputEl.click();
+            }
+        });
+    }
 
-    
     // Surveyor Form Submission
-    document.getElementById('form-surveyor').addEventListener('submit', handleSurveyorSubmit);
+    const formSurveyor = document.getElementById('form-surveyor');
+    if (formSurveyor) {
+        formSurveyor.addEventListener('submit', handleSurveyorSubmit);
+    }
     
     // Clean assignments buttons
-    document.getElementById('btn-clear-assignments').addEventListener('click', clearActiveSurveyorAssignments);
+    const btnClear = document.getElementById('btn-clear-assignments');
+    if (btnClear) {
+        btnClear.addEventListener('click', clearActiveSurveyorAssignments);
+    }
     
     // Export CSV Download button
-    document.getElementById('btn-download-csv').addEventListener('click', downloadCSV);
+    const btnDownload = document.getElementById('btn-download-csv');
+    if (btnDownload) {
+        btnDownload.addEventListener('click', downloadCSV);
+    }
     
     // Fit bounds Map control
-    document.getElementById('btn-fit-bounds').addEventListener('click', fitMapToGrid);
+    const btnFit = document.getElementById('btn-fit-bounds');
+    if (btnFit) {
+        btnFit.addEventListener('click', fitMapToGrid);
+    }
     
     // Reset App configuration button
-    document.getElementById('btn-reset-app').addEventListener('click', resetApplication);
+    const btnReset = document.getElementById('btn-reset-app');
+    if (btnReset) {
+        btnReset.addEventListener('click', resetApplication);
+    }
+}
+
+// Initialize Collapsible Cards
+function initCollapsibleCards() {
+    const card = document.getElementById('card-add-surveyor');
+    const header = document.getElementById('header-add-surveyor');
+    
+    if (card && header) {
+        header.addEventListener('click', function() {
+            card.classList.toggle('collapsed');
+        });
+    }
 }
 
 // App Initialization entrypoint
@@ -1260,7 +1294,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // 2. Setup Event listener bindings
     setupEventListeners();
     
-    // 3. Load from LocalStorage if data exists
+    // 3. Initialize collapsible card toggle
+    initCollapsibleCards();
+    
+    // 4. Load from LocalStorage if data exists
     if (loadState()) {
         renderSurveyorsList();
         renderSurveyorMarkersOnMap();
@@ -1273,7 +1310,14 @@ document.addEventListener('DOMContentLoaded', function() {
             fitMapToGrid();
         }
     } else {
-        // First load: set active surveyor panel empty state
+        // First load: set active surveyor panel empty state and auto-load Pathanamthitta
         updateActiveSurveyorPanel();
+        
+        const defaultDistrict = "Pathanamthitta";
+        const selectEl = document.getElementById('district-select');
+        if (selectEl) {
+            selectEl.value = defaultDistrict;
+            loadDistrictKML(defaultDistrict);
+        }
     }
 });
