@@ -39,6 +39,16 @@ function initMap() {
         attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
     });
 
+    // Google Street Map (Indian Border Compliant version)
+    const googleStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&gl=IN', {
+        attribution: '&copy; Google Maps (India)'
+    });
+
+    // Google Hybrid Map (Indian Border Compliant version)
+    const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&gl=IN', {
+        attribution: '&copy; Google Maps (India)'
+    });
+
     // Add default tile layer
     darkTiles.addTo(map);
 
@@ -46,7 +56,9 @@ function initMap() {
     const baseMaps = {
         "Dark Mode Map": darkTiles,
         "OpenStreetMap": osmTiles,
-        "Satellite": satelliteTiles
+        "Satellite": satelliteTiles,
+        "Google Street (India)": googleStreet,
+        "Google Hybrid (India)": googleHybrid
     };
     L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
 
