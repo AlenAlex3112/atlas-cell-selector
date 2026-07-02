@@ -391,8 +391,12 @@ function handleCellClick(cell) {
         assignments[cell.id].push({
             surveyorId: activeSurveyorId,
             distance: distance,
-            band: band
+            band: band,
+            distanceType: 'aerial'
         });
+        
+        // Asynchronously update to driving distance using OSRM API
+        updateAssignmentDrivingDistance(activeSurveyorId, cell.id);
     }
     
     // Save to local storage
@@ -423,6 +427,8 @@ function showCellDetailsPopup(cell) {
             const surveyor = surveyors.find(s => s.id === owner.surveyorId);
             const surveyorName = surveyor ? surveyor.name : "Unknown";
             const bandInfo = getDistanceBand(owner.distance);
+            const distType = owner.distanceType === 'driving' ? '🚗 driving' : '✈️ aerial';
+            const durationText = owner.duration ? `, ~${Math.round(owner.duration)} min` : '';
             
             ownersHTML += `
                 <li class="popup-owner-item">
@@ -430,7 +436,7 @@ function showCellDetailsPopup(cell) {
                         <span style="width:8px; height:8px; border-radius:50%; background-color:${surveyor ? surveyor.color : '#fff'}; display:inline-block;"></span>
                         <strong>${escapeHTML(surveyorName)}</strong>
                     </span>
-                    <span class="band-badge ${bandInfo.code.toLowerCase()}">${bandInfo.name} (${owner.distance.toFixed(1)} km)</span>
+                    <span class="band-badge ${bandInfo.code.toLowerCase()}">${bandInfo.name} (${owner.distance.toFixed(1)} km ${distType}${durationText})</span>
                 </li>
             `;
         });
@@ -761,7 +767,9 @@ function updateActiveSurveyorPanel() {
                     cellId: cellId,
                     cellName: cell.name,
                     distance: activeOwner.distance,
-                    band: activeOwner.band
+                    band: activeOwner.band,
+                    distanceType: activeOwner.distanceType,
+                    duration: activeOwner.duration
                 });
                 
                 if (activeOwner.band === 'A') bandACount++;
@@ -792,11 +800,16 @@ function updateActiveSurveyorPanel() {
         
         surveyorCells.forEach(item => {
             const bandInfo = getDistanceBand(item.distance);
+            const distType = item.distanceType === 'driving' ? '🚗 driving' : '✈️ aerial';
+            const durationText = item.duration ? `, ~${Math.round(item.duration)}m` : '';
             const row = document.createElement('tr');
             
             row.innerHTML = `
                 <td><strong>${escapeHTML(item.cellName)}</strong></td>
-                <td>${item.distance.toFixed(1)} km</td>
+                <td>
+                    <div style="font-weight: 600;">${item.distance.toFixed(1)} km</div>
+                    <div style="font-size: 0.7rem; color: var(--text-secondary); white-space: nowrap;">${distType}${durationText}</div>
+                </td>
                 <td><span class="band-badge ${item.band.toLowerCase()}">${bandInfo.name}</span></td>
                 <td>
                     <button class="btn-delete-assignment btn-delete-surveyor" title="Remove Assignment" data-cellid="${item.cellId}">
@@ -905,7 +918,7 @@ function downloadCSV() {
     let csvContent = "data:text/csv;charset=utf-8,";
     
     // CSV Header Columns
-    csvContent += "Surveyor Name,Surveyor Latitude,Surveyor Longitude,Cell ID,Cell Name,Distance (km),Distance Band\r\n";
+    csvContent += "Surveyor Name,Surveyor Latitude,Surveyor Longitude,Cell ID,Cell Name,Distance (km),Distance Type,Est Duration (min),Distance Band\r\n";
     
     let assignmentCount = 0;
     
@@ -924,9 +937,11 @@ function downloadCSV() {
             const surveyorName = `"${surveyor.name.replace(/"/g, '""')}"`;
             const cellName = `"${cell.name.replace(/"/g, '""')}"`;
             const distance = owner.distance.toFixed(3);
+            const distType = owner.distanceType || 'aerial';
+            const duration = owner.duration ? owner.duration.toFixed(1) : '';
             const bandName = `"${bandInfo.name.replace(/"/g, '""')}"`;
             
-            csvContent += `${surveyorName},${surveyor.lat},${surveyor.lon},${cell.id},${cellName},${distance},${bandName}\r\n`;
+            csvContent += `${surveyorName},${surveyor.lat},${surveyor.lon},${cell.id},${cellName},${distance},${distType},${duration},${bandName}\r\n`;
             assignmentCount++;
         });
     }
@@ -1027,9 +1042,13 @@ function recalculateAllDistances() {
                 );
                 owner.distance = distance;
                 owner.band = getDistanceBand(distance).code;
+                delete owner.distanceType;
+                delete owner.duration;
             }
         });
     }
+    // Trigger background fetch of all missing driving distances
+    fetchAllMissingDrivingDistances();
 }
 
 
@@ -1286,6 +1305,63 @@ function initCollapsibleCards() {
     }
 }
 
+// Function to fetch driving distance asynchronously via OSRM public API
+function updateAssignmentDrivingDistance(surveyorId, cellId) {
+    const surveyor = surveyors.find(s => s.id === surveyorId);
+    const cell = cells.find(c => c.id === cellId);
+    if (!surveyor || !cell) return;
+
+    const owners = assignments[cellId] || [];
+    const owner = owners.find(o => o.surveyorId === surveyorId);
+    if (!owner) return;
+
+    // Use OSRM public API to get driving route
+    const url = `https://router.project-osrm.org/route/v1/driving/${surveyor.lon},${surveyor.lat};${cell.centroid.lon},${cell.centroid.lat}?overview=false`;
+
+    fetch(url)
+        .then(response => {
+            if (!response.ok) throw new Error("OSRM API error");
+            return response.json();
+        })
+        .then(data => {
+            if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+                const route = data.routes[0];
+                const drivingDistanceKm = route.distance / 1000;
+                const durationMinutes = route.duration / 60;
+
+                owner.distance = drivingDistanceKm;
+                owner.duration = durationMinutes;
+                owner.band = getDistanceBand(drivingDistanceKm).code;
+                owner.distanceType = 'driving';
+
+                saveState();
+                updateAllCellStyles();
+                updateActiveSurveyorPanel();
+                updateAppStats();
+            }
+        })
+        .catch(err => {
+            console.warn(`Failed to fetch driving distance for cell ${cellId}:`, err);
+            // Keep aerial distance as fallback
+            owner.distanceType = 'aerial';
+        });
+}
+
+// Staggered fetch for all missing driving distances
+function fetchAllMissingDrivingDistances() {
+    let delay = 0;
+    for (const cellId in assignments) {
+        assignments[cellId].forEach(owner => {
+            if (owner.distanceType !== 'driving') {
+                setTimeout(() => {
+                    updateAssignmentDrivingDistance(owner.surveyorId, cellId);
+                }, delay);
+                delay += 250; // stagger requests by 250ms to respect OSRM server limits
+            }
+        });
+    }
+}
+
 // App Initialization entrypoint
 document.addEventListener('DOMContentLoaded', function() {
     // 1. Initialize Map view
@@ -1309,6 +1385,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (cells.length > 0) {
             fitMapToGrid();
         }
+        
+        // Staggered fetch for any missing driving distances
+        fetchAllMissingDrivingDistances();
     } else {
         // First load: set active surveyor panel empty state and auto-load Pathanamthitta
         updateActiveSurveyorPanel();
