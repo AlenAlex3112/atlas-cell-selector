@@ -390,7 +390,9 @@ function handleCellClick(cell) {
         }
         assignments[cell.id].push({
             surveyorId: activeSurveyorId,
-            distance: distance,
+            aerialDistance: distance,
+            drivingDistance: null,
+            distance: distance, // fallback for band calculation until driving is loaded
             band: band,
             distanceType: 'aerial'
         });
@@ -427,16 +429,22 @@ function showCellDetailsPopup(cell) {
             const surveyor = surveyors.find(s => s.id === owner.surveyorId);
             const surveyorName = surveyor ? surveyor.name : "Unknown";
             const bandInfo = getDistanceBand(owner.distance);
-            const distType = owner.distanceType === 'driving' ? '🚗 driving' : '✈️ aerial';
-            const durationText = owner.duration ? `, ~${Math.round(owner.duration)} min` : '';
+            const aerialText = `✈️ ${owner.aerialDistance ? owner.aerialDistance.toFixed(1) : owner.distance.toFixed(1)} km`;
+            const drivingText = owner.drivingDistance 
+                ? `🚗 ${owner.drivingDistance.toFixed(1)} km${owner.duration ? ` (~${Math.round(owner.duration)} min)` : ''}`
+                : `🚗 Routing...`;
             
             ownersHTML += `
-                <li class="popup-owner-item">
+                <li class="popup-owner-item" style="flex-direction: column; align-items: flex-start; gap: 4px;">
                     <span style="display:flex; align-items:center; gap:6px;">
                         <span style="width:8px; height:8px; border-radius:50%; background-color:${surveyor ? surveyor.color : '#fff'}; display:inline-block;"></span>
                         <strong>${escapeHTML(surveyorName)}</strong>
                     </span>
-                    <span class="band-badge ${bandInfo.code.toLowerCase()}">${bandInfo.name} (${owner.distance.toFixed(1)} km ${distType}${durationText})</span>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); margin-left: 14px; margin-top: 2px;">
+                        <div>${drivingText}</div>
+                        <div>${aerialText} (aerial)</div>
+                    </div>
+                    <span class="band-badge ${bandInfo.code.toLowerCase()}" style="margin-left: 14px; margin-top: 2px;">${bandInfo.name}</span>
                 </li>
             `;
         });
@@ -768,6 +776,8 @@ function updateActiveSurveyorPanel() {
                     cellName: cell.name,
                     distance: activeOwner.distance,
                     band: activeOwner.band,
+                    aerialDistance: activeOwner.aerialDistance,
+                    drivingDistance: activeOwner.drivingDistance,
                     distanceType: activeOwner.distanceType,
                     duration: activeOwner.duration
                 });
@@ -800,15 +810,17 @@ function updateActiveSurveyorPanel() {
         
         surveyorCells.forEach(item => {
             const bandInfo = getDistanceBand(item.distance);
-            const distType = item.distanceType === 'driving' ? '🚗 driving' : '✈️ aerial';
-            const durationText = item.duration ? `, ~${Math.round(item.duration)}m` : '';
+            const aerialText = `✈️ ${item.aerialDistance ? item.aerialDistance.toFixed(1) : item.distance.toFixed(1)} km`;
+            const drivingText = item.drivingDistance 
+                ? `🚗 ${item.drivingDistance.toFixed(1)} km${item.duration ? ` (~${Math.round(item.duration)}m)` : ''}`
+                : `🚗 Routing...`;
             const row = document.createElement('tr');
             
             row.innerHTML = `
                 <td><strong>${escapeHTML(item.cellName)}</strong></td>
                 <td>
-                    <div style="font-weight: 600;">${item.distance.toFixed(1)} km</div>
-                    <div style="font-size: 0.7rem; color: var(--text-secondary); white-space: nowrap;">${distType}${durationText}</div>
+                    <div style="font-size: 0.85rem; font-weight: 600; color: #ffffff;">${drivingText}</div>
+                    <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; white-space: nowrap;">${aerialText} (aerial)</div>
                 </td>
                 <td><span class="band-badge ${item.band.toLowerCase()}">${bandInfo.name}</span></td>
                 <td>
@@ -1118,6 +1130,30 @@ function loadState() {
         cells = state.cells || [];
         assignments = state.assignments || {};
         activeSurveyorId = state.activeSurveyorId || null;
+        // Migrate / sanitize old records to support both aerial and driving distances
+        for (const cellId in assignments) {
+            const cell = cells.find(c => c.id === cellId);
+            if (!cell) continue;
+            
+            assignments[cellId].forEach(owner => {
+                const surveyor = surveyors.find(s => s.id === owner.surveyorId);
+                if (surveyor) {
+                    if (owner.aerialDistance === undefined) {
+                        owner.aerialDistance = calculateHaversineDistance(
+                            surveyor.lat, surveyor.lon,
+                            cell.centroid.lat, cell.centroid.lon
+                        );
+                    }
+                    if (owner.drivingDistance === undefined) {
+                        if (owner.distanceType === 'driving') {
+                            owner.drivingDistance = owner.distance;
+                        } else {
+                            owner.drivingDistance = null;
+                        }
+                    }
+                }
+            });
+        }
         
         // Restore dropdown value
         const selectEl = document.getElementById('district-select');
@@ -1329,6 +1365,7 @@ function updateAssignmentDrivingDistance(surveyorId, cellId) {
                 const drivingDistanceKm = route.distance / 1000;
                 const durationMinutes = route.duration / 60;
 
+                owner.drivingDistance = drivingDistanceKm;
                 owner.distance = drivingDistanceKm;
                 owner.duration = durationMinutes;
                 owner.band = getDistanceBand(drivingDistanceKm).code;
